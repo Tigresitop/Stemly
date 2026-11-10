@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Datos generados (canciones y pistas)
+data/
+separated/
+
+# Audio
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
