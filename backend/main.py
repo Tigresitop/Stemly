@@ -12,6 +12,7 @@ Seguridad:
 - Procesa una cancion a la vez para no saturar la GPU.
 """
 
+import re
 import shutil
 import threading
 import uuid
@@ -42,6 +43,17 @@ CHUNK_SIZE = 1024 * 1024  # 1 MB
 MODELS: dict[str, list[str]] = {
     "htdemucs_6s": ["vocals", "drums", "bass", "guitar", "piano", "other", "instrumental"],
     "htdemucs": ["vocals", "drums", "bass", "other", "instrumental"],
+}
+
+# Nombres en espanol para los archivos descargados
+STEM_NAMES_ES = {
+    "vocals": "Voz",
+    "drums": "Batería",
+    "bass": "Bajo",
+    "guitar": "Guitarra",
+    "piano": "Piano",
+    "other": "Otros",
+    "instrumental": "Instrumental",
 }
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -88,6 +100,13 @@ def get_job_or_404(job_id: str) -> dict:
         if job is None:
             raise HTTPException(status_code=404, detail="Trabajo no encontrado")
         return dict(job)
+
+
+def safe_song_name(filename: str | None) -> str:
+    """Nombre de la cancion sin extension, sin caracteres prohibidos en Windows."""
+    name = Path(filename or "").stem
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip(" .")
+    return name[:150] or "cancion"
 
 
 def make_progress_callback(job_id: str):
@@ -211,7 +230,8 @@ def get_stem(job_id: str, stem: str):
     path = OUTPUT_DIR / job_id / f"{stem}.wav"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path, media_type="audio/wav", filename=f"{stem}.wav")
+    download_name = f"{safe_song_name(job['filename'])} ({STEM_NAMES_ES.get(stem, stem)}).wav"
+    return FileResponse(path, media_type="audio/wav", filename=download_name)
 
 
 @app.delete("/jobs/{job_id}")
