@@ -2,6 +2,13 @@ export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 export type ModelName = "htdemucs_6s" | "htdemucs";
+export type AudioFormat = "wav" | "mp3" | "flac";
+
+export const FORMAT_OPTIONS: { value: AudioFormat; label: string; hint: string }[] = [
+  { value: "wav", label: "WAV", hint: "Sin compresión · pesa más" },
+  { value: "flac", label: "FLAC", hint: "Sin pérdida · ~40% más liviano" },
+  { value: "mp3", label: "MP3", hint: "320 kbps · el más liviano" },
+];
 
 export type JobStatus = {
   job_id: string;
@@ -18,6 +25,8 @@ export type Health = {
   device: "cuda" | "cpu";
   gpu: string | null;
   models: Record<ModelName, string[]>;
+  ffmpeg?: boolean;
+  formats?: AudioFormat[];
 };
 
 export const STEM_LABELS: Record<string, string> = {
@@ -84,6 +93,30 @@ export async function deleteJob(jobId: string): Promise<void> {
   await fetch(`${API_URL}/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
 }
 
-export function stemUrl(jobId: string, stem: string): string {
-  return `${API_URL}/stems/${encodeURIComponent(jobId)}/${encodeURIComponent(stem)}`;
+export function stemUrl(jobId: string, stem: string, format: AudioFormat = "wav"): string {
+  return `${API_URL}/stems/${encodeURIComponent(jobId)}/${encodeURIComponent(stem)}?format=${format}`;
+}
+
+/** Pide al backend la mezcla con los volúmenes indicados y la devuelve como archivo. */
+export async function requestMix(
+  jobId: string,
+  gains: Record<string, number>,
+  format: AudioFormat,
+): Promise<Blob> {
+  const res = await fetch(`${API_URL}/mix/${encodeURIComponent(jobId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gains, format }),
+  });
+  if (!res.ok) {
+    let message = `Error ${res.status}`;
+    try {
+      const data = await res.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      // respuesta sin JSON
+    }
+    throw new Error(message);
+  }
+  return res.blob();
 }

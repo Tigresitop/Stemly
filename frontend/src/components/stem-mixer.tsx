@@ -5,12 +5,19 @@ import { Download, FileAudio, Loader2, Pause, Play, Square } from "lucide-react"
 import { toast } from "sonner";
 
 import { Slider } from "@/components/ui/slider";
-import { ACCENT, STEM_COLORS, STEM_LABELS, stemUrl } from "@/lib/api";
+import {
+  ACCENT,
+  STEM_COLORS,
+  STEM_LABELS,
+  requestMix,
+  stemUrl,
+  type AudioFormat,
+} from "@/lib/api";
+import { cleanSongName, downloadBlob } from "@/lib/download";
 import { mono } from "@/lib/fonts";
-import { cleanSongName, downloadBlob, encodeWav } from "@/lib/wav";
 
 type TrackState = { volume: number; muted: boolean; solo: boolean };
-type Props = { jobId: string; stems: string[]; filename: string | null };
+type Props = { jobId: string; stems: string[]; filename: string | null; format: AudioFormat };
 
 function joinNames(names: string[]) {
   if (names.length <= 1) return names.join("");
@@ -25,7 +32,7 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function StemMixer({ jobId, stems, filename }: Props) {
+export function StemMixer({ jobId, stems, filename, format }: Props) {
   const ctxRef = useRef<AudioContext | null>(null);
   const buffersRef = useRef<Record<string, AudioBuffer>>({});
   const gainsRef = useRef<Record<string, GainNode>>({});
@@ -278,27 +285,14 @@ export function StemMixer({ jobId, stems, filename }: Props) {
     }
     setExporting(true);
     try {
-      const buffers = buffersRef.current;
-      const list = Object.values(buffers);
-      const length = Math.max(...list.map((b) => b.length));
-      const offline = new OfflineAudioContext(2, length, list[0].sampleRate);
-
-      for (const stem of audibleStems) {
-        const src = offline.createBufferSource();
-        src.buffer = buffers[stem];
-        const gain = offline.createGain();
-        gain.gain.value = gainFor(stem);
-        src.connect(gain).connect(offline.destination);
-        src.start(0);
-      }
-
-      const rendered = await offline.startRendering();
+      const gains = Object.fromEntries(stems.map((s) => [s, gainFor(s)]));
+      const blob = await requestMix(jobId, gains, format);
       const suffix =
         silencedStems.length === 0
           ? "Mezcla"
           : `Sin ${joinNames(silencedStems.map((s) => STEM_LABELS[s] ?? s))}`;
-      downloadBlob(encodeWav(rendered), `${cleanSongName(filename)} (${suffix}).wav`);
-      toast.success("Mezcla exportada");
+      downloadBlob(blob, `${cleanSongName(filename)} (${suffix}).${format}`);
+      toast.success(`Mezcla exportada en ${format.toUpperCase()}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo exportar la mezcla");
     } finally {
@@ -420,7 +414,7 @@ export function StemMixer({ jobId, stems, filename }: Props) {
               </div>
 
               <a
-                href={stemUrl(jobId, stem)}
+                href={stemUrl(jobId, stem, format)}
                 download
                 className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label={`Descargar ${STEM_LABELS[stem] ?? stem}`}
@@ -464,7 +458,7 @@ export function StemMixer({ jobId, stems, filename }: Props) {
           style={{ borderColor: ACCENT, color: ACCENT }}
         >
           {exporting ? <Loader2 className="size-4 animate-spin" /> : <FileAudio className="size-4" />}
-          {exporting ? "Exportando…" : "Exportar mezcla"}
+          {exporting ? "Exportando…" : `Exportar mezcla · ${format.toUpperCase()}`}
         </button>
       </div>
     </section>

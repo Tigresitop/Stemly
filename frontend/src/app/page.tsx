@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import { StemMixer } from "@/components/stem-mixer";
 import {
   ACCENT,
+  FORMAT_OPTIONS,
   ALLOWED_EXTENSIONS,
   MAX_FILE_SIZE,
   STEM_COLORS,
@@ -18,6 +19,7 @@ import {
   uploadSong,
   type Health,
   type JobStatus,
+  type AudioFormat,
   type ModelName,
 } from "@/lib/api";
 import { mono } from "@/lib/fonts";
@@ -44,6 +46,26 @@ export default function Home() {
   const [backendDown, setBackendDown] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [model, setModel] = useState<ModelName>("htdemucs_6s");
+  const [format, setFormat] = useState<AudioFormat>("wav");
+
+  // Recordar el formato elegido entre visitas (solo en este navegador)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("stemly-format");
+      if (saved === "wav" || saved === "mp3" || saved === "flac") setFormat(saved);
+    } catch {
+      // almacenamiento no disponible: se usa WAV
+    }
+  }, []);
+
+  const chooseFormat = (f: AudioFormat) => {
+    setFormat(f);
+    try {
+      localStorage.setItem("stemly-format", f);
+    } catch {
+      // sin almacenamiento, no pasa nada
+    }
+  };
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [job, setJob] = useState<JobStatus | null>(null);
@@ -290,7 +312,7 @@ export default function Home() {
               <h2 className="truncate text-xl font-semibold">{job.filename}</h2>
             </div>
             <a
-              href={stemUrl(job.job_id, "instrumental")}
+              href={stemUrl(job.job_id, "instrumental", format)}
               download
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-black"
               style={{ background: ACCENT }}
@@ -304,7 +326,47 @@ export default function Home() {
               <RotateCcw className="size-4" /> Nueva canción
             </button>
           </div>
-          <StemMixer jobId={job.job_id} stems={mixerStems} filename={job.filename} />
+          {/* Formato de descarga: aplica a todas las descargas */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className={`${mono.className} text-[11px] uppercase tracking-wider text-zinc-500`}>
+              Formato de descarga
+            </span>
+            <div className="flex rounded-xl border border-white/10 p-1" role="radiogroup" aria-label="Formato de descarga">
+              {FORMAT_OPTIONS.map((opt) => {
+                const active = format === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => chooseFormat(opt.value)}
+                    title={opt.hint}
+                    className={`${mono.className} rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      active ? "text-black" : "text-zinc-400 hover:text-white"
+                    }`}
+                    style={active ? { backgroundColor: ACCENT } : undefined}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-xs text-zinc-500">
+              {FORMAT_OPTIONS.find((o) => o.value === format)?.hint}
+            </span>
+            {health && health.ffmpeg === false && format !== "wav" && (
+              <span className="text-xs text-red-400">
+                FFmpeg no está instalado: solo funciona WAV
+              </span>
+            )}
+          </div>
+
+          <StemMixer
+            jobId={job.job_id}
+            stems={mixerStems}
+            filename={job.filename}
+            format={format}
+          />
         </section>
       )}
 

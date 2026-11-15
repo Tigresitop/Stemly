@@ -12,8 +12,10 @@ Seguridad:
 - Procesa una cancion a la vez para no saturar la GPU.
 """
 
+import os
 import re
 import shutil
+import subprocess
 import threading
 import time
 import uuid
@@ -28,6 +30,8 @@ from demucs.api import Separator, save_audio
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 # ---------------------------------------------------------------------------
 # Configuracion
@@ -59,6 +63,16 @@ STEM_NAMES_ES = {
 }
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Formatos de descarga (la conversion la hace FFmpeg)
+AudioFormat = Literal["wav", "mp3", "flac"]
+FORMATS: dict[str, dict] = {
+    "wav": {"codec": ["-c:a", "pcm_s16le"], "media_type": "audio/wav"},
+    "mp3": {"codec": ["-c:a", "libmp3lame", "-b:a", "320k"], "media_type": "audio/mpeg"},
+    "flac": {"codec": ["-c:a", "flac"], "media_type": "audio/flac"},
+}
+FFMPEG = shutil.which("ffmpeg")
+FFMPEG_TIMEOUT_SECONDS = 300
 
 HOST = "127.0.0.1"  # NO cambiar a 0.0.0.0: eso expondria el servidor a tu red
 PORT = 8000
@@ -175,6 +189,47 @@ def safe_song_name(filename: str | None) -> str:
     return name[:150] or "cancion"
 
 
+def run_ffmpeg(args: list[str], output: Path) -> None:
+    """Ejecuta FFmpeg escribiendo a un archivo temporal y lo renombra al terminar.
+
+    Asi nunca queda un archivo a medio escribir si algo falla o si dos pedidos
+    convierten lo mismo a la vez.
+    """
+    if not FFMPEG:
+        raise HTTPException(
+            status_code=500,
+            detail="FFmpeg no esta instalado. Instalalo con: winget install Gyan.FFmpeg",
+        )
+    tmp = output.with_name(f".tmp-{uuid.uuid4().hex}{output.suffix}")
+    try:
+        result = subprocess.run(
+            [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", *args, str(tmp)],
+            capture_output=True,
+            text=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Error al convertir: {result.stderr.strip()[:300]}")
+        os.replace(tmp, output)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="La conversion tardo demasiado")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def stem_file(job_id: str, stem: str, fmt: str) -> Path:
+    """Devuelve la pista en el formato pedido, convirtiendola la primera vez (queda en cache)."""
+    wav = OUTPUT_DIR / job_id / f"{stem}.wav"
+    if not wav.is_file():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    if fmt == "wav":
+        return wav
+    converted = OUTPUT_DIR / job_id / f"{stem}.{fmt}"
+    if not converted.is_file():
+        run_ffmpeg(["-i", str(wav), *FORMATS[fmt]["codec"]], converted)
+    return converted
+
+
 def make_progress_callback(job_id: str):
     def callback(info: dict) -> None:
         length = info.get("audio_length") or 0
@@ -228,6 +283,8 @@ def health():
         "device": DEVICE,
         "gpu": torch.cuda.get_device_name(0) if DEVICE == "cuda" else None,
         "models": MODELS,
+        "ffmpeg": FFMPEG is not None,
+        "formats": list(FORMATS),
     }
 
 
@@ -287,18 +344,65 @@ def status(job_id: str):
 
 
 @app.get("/stems/{job_id}/{stem}")
-def get_stem(job_id: str, stem: str):
+def get_stem(job_id: str, stem: str, format: AudioFormat = "wav"):  # noqa: A002
     job = get_job_or_404(job_id)
     if job["status"] != "done":
         raise HTTPException(status_code=409, detail="El trabajo aun no termina")
     if stem not in job["stems"]:
         raise HTTPException(status_code=404, detail="Pista no encontrada")
 
-    path = OUTPUT_DIR / job_id / f"{stem}.wav"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    download_name = f"{safe_song_name(job['filename'])} ({STEM_NAMES_ES.get(stem, stem)}).wav"
-    return FileResponse(path, media_type="audio/wav", filename=download_name)
+    path = stem_file(job_id, stem, format)
+    download_name = f"{safe_song_name(job['filename'])} ({STEM_NAMES_ES.get(stem, stem)}).{format}"
+    return FileResponse(path, media_type=FORMATS[format]["media_type"], filename=download_name)
+
+
+class MixRequest(BaseModel):
+    gains: dict[str, float] = Field(description="Volumen de cada pista, de 0 a 1")
+    format: AudioFormat = "wav"
+
+
+@app.post("/mix/{job_id}")
+def mix(job_id: str, body: MixRequest):
+    """Mezcla las pistas con el volumen indicado y devuelve un solo archivo."""
+    job = get_job_or_404(job_id)
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail="El trabajo aun no termina")
+
+    mixable = [s for s in job["stems"] if s != "instrumental"]
+    for stem, gain in body.gains.items():
+        if stem not in mixable:
+            raise HTTPException(status_code=400, detail=f"Pista no valida: {stem}")
+        if not 0 <= gain <= 1:
+            raise HTTPException(status_code=400, detail="El volumen debe estar entre 0 y 1")
+
+    active = [(s, g) for s, g in body.gains.items() if g > 0]
+    if not active:
+        raise HTTPException(status_code=400, detail="Todas las pistas estan en silencio")
+
+    inputs: list[str] = []
+    chains: list[str] = []
+    for i, (stem, gain) in enumerate(active):
+        wav = OUTPUT_DIR / job_id / f"{stem}.wav"
+        if not wav.is_file():
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        inputs += ["-i", str(wav)]
+        chains.append(f"[{i}:a]volume={gain:.4f}[a{i}]")
+    labels = "".join(f"[a{i}]" for i in range(len(active)))
+    # normalize=0: suma sin bajar el volumen; alimiter evita que sature al sumar
+    graph = ";".join(chains) + (
+        f";{labels}amix=inputs={len(active)}:normalize=0:duration=longest,"
+        "alimiter=limit=0.98:level=0[out]"
+    )
+
+    output = OUTPUT_DIR / job_id / f"mix-{uuid.uuid4().hex}.{body.format}"
+    run_ffmpeg([*inputs, "-filter_complex", graph, "-map", "[out]", *FORMATS[body.format]["codec"]], output)
+
+    return FileResponse(
+        output,
+        media_type=FORMATS[body.format]["media_type"],
+        filename=f"{safe_song_name(job['filename'])} (Mezcla).{body.format}",
+        background=BackgroundTask(output.unlink, missing_ok=True),  # se borra tras enviarla
+    )
 
 
 @app.delete("/jobs/{job_id}")
