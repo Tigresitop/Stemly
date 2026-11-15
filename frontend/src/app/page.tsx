@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, RotateCcw, Upload } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,14 +15,17 @@ import {
   checkHealth,
   deleteJob,
   getStatus,
-  stemUrl,
+  STEM_FILE_NAMES,
+  fetchStem,
   uploadSong,
   type Health,
   type JobStatus,
   type AudioFormat,
   type ModelName,
 } from "@/lib/api";
+import { cleanSongName } from "@/lib/download";
 import { mono } from "@/lib/fonts";
+import { saveAudio } from "@/lib/save";
 
 const MODEL_OPTIONS: { value: ModelName; title: string; desc: string }[] = [
   { value: "htdemucs_6s", title: "6 pistas", desc: "Voz · batería · bajo · guitarra · piano · otros" },
@@ -142,7 +145,12 @@ export default function Home() {
   };
 
   const busy = uploading || job?.status === "queued" || job?.status === "processing";
-  const mixerStems = job?.stems.filter((s) => s !== "instrumental") ?? [];
+  // Misma lista mientras no cambien las pistas (evita que el mezclador se reinicie)
+  const jobStems = job?.stems;
+  const mixerStems = useMemo(
+    () => jobStems?.filter((s) => s !== "instrumental") ?? [],
+    [jobStems],
+  );
   const gpuName = health?.gpu?.replace("NVIDIA GeForce ", "").replace(" Laptop GPU", "");
 
   return (
@@ -197,12 +205,12 @@ export default function Home() {
               setDragging(false);
               pickFile(e.dataTransfer.files[0]);
             }}
-            className={`group relative flex cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-dashed p-12 text-center transition-colors ${
+            className={`group relative flex cursor-pointer flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-dashed px-12 pb-20 pt-12 text-center transition-colors ${
               dragging ? "border-[#E8FF59] bg-[#E8FF59]/5" : "border-white/15 hover:border-white/30"
             }`}
           >
             {/* Barras decorativas de fondo */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center gap-1 opacity-20">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-12 items-end justify-center gap-1 opacity-15">
               {DECOR_BARS.map(({ height, color }, i) => (
                 <span
                   key={i}
@@ -311,14 +319,18 @@ export default function Home() {
               </p>
               <h2 className="truncate text-xl font-semibold">{job.filename}</h2>
             </div>
-            <a
-              href={stemUrl(job.job_id, "instrumental", format)}
-              download
+            <button
+              onClick={() =>
+                saveAudio({
+                  name: `${cleanSongName(job.filename)} (${STEM_FILE_NAMES.instrumental}).${format}`,
+                  getBlob: () => fetchStem(job.job_id, "instrumental", format),
+                })
+              }
               className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-black"
               style={{ background: ACCENT }}
             >
               <Download className="size-4" /> Descargar sin voz
-            </a>
+            </button>
             <button
               onClick={reset}
               className="flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm hover:bg-white/5"

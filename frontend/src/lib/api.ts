@@ -39,6 +39,17 @@ export const STEM_LABELS: Record<string, string> = {
   instrumental: "Instrumental (sin voz)",
 };
 
+// Nombre de cada pista en los archivos guardados (igual que en el backend)
+export const STEM_FILE_NAMES: Record<string, string> = {
+  vocals: "Voz",
+  drums: "Batería",
+  bass: "Bajo",
+  guitar: "Guitarra",
+  piano: "Piano",
+  other: "Otros",
+  instrumental: "Instrumental",
+};
+
 // Color propio de cada pista (como las tiras de color de una consola)
 export const STEM_COLORS: Record<string, string> = {
   vocals: "#FF6B9A",
@@ -95,6 +106,22 @@ export async function deleteJob(jobId: string): Promise<void> {
 
 export function stemUrl(jobId: string, stem: string, format: AudioFormat = "wav"): string {
   return `${API_URL}/stems/${encodeURIComponent(jobId)}/${encodeURIComponent(stem)}?format=${format}`;
+}
+
+/** Descarga una pista del backend en el formato pedido. */
+export async function fetchStem(jobId: string, stem: string, format: AudioFormat): Promise<Blob> {
+  const res = await fetch(stemUrl(jobId, stem, format));
+  if (!res.ok) {
+    let message = `Error ${res.status}`;
+    try {
+      const data = await res.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      // respuesta sin JSON
+    }
+    throw new Error(message);
+  }
+  return res.blob();
 }
 
 /** Pide al backend la mezcla con los volúmenes indicados y la devuelve como archivo. */

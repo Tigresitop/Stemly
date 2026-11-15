@@ -9,11 +9,14 @@ import {
   ACCENT,
   STEM_COLORS,
   STEM_LABELS,
+  STEM_FILE_NAMES,
+  fetchStem,
   requestMix,
   stemUrl,
   type AudioFormat,
 } from "@/lib/api";
-import { cleanSongName, downloadBlob } from "@/lib/download";
+import { cleanSongName } from "@/lib/download";
+import { saveAudio } from "@/lib/save";
 import { mono } from "@/lib/fonts";
 
 type TrackState = { volume: number; muted: boolean; solo: boolean };
@@ -104,15 +107,28 @@ export function StemMixer({ jobId, stems, filename, format }: Props) {
   };
 
   // ---------- Carga de pistas ----------
+  // Se recarga solo si cambia la canción o la lista de pistas (comparada por contenido,
+  // no por referencia: así cambiar el formato u otro estado de la página no reinicia el audio).
+  const stemsKey = stems.join("|");
   useEffect(() => {
     let cancelled = false;
+    const list = stemsKey.split("|");
     const ctx = new AudioContext();
     ctxRef.current = ctx;
+    // Empezar de cero: nada del motor de audio anterior se reutiliza
+    buffersRef.current = {};
+    gainsRef.current = {};
+    analysersRef.current = {};
+    sourcesRef.current = [];
+    offsetRef.current = 0;
+    setLoading(true);
+    setPlaying(false);
+    setPosition(0);
 
     (async () => {
       try {
         const entries = await Promise.all(
-          stems.map(async (stem) => {
+          list.map(async (stem) => {
             const res = await fetch(stemUrl(jobId, stem));
             if (!res.ok) throw new Error(`No se pudo cargar ${stem}`);
             return [stem, await ctx.decodeAudioData(await res.arrayBuffer())] as const;
@@ -163,10 +179,11 @@ export function StemMixer({ jobId, stems, filename, format }: Props) {
           s.stop();
         } catch {}
       });
+      sourcesRef.current = [];
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       ctx.close();
     };
-  }, [jobId, stems]);
+  }, [jobId, stemsKey]);
 
   // Dibujar la onda al terminar de cargar y al cambiar el tamano de ventana
   useEffect(() => {
@@ -215,7 +232,7 @@ export function StemMixer({ jobId, stems, filename, format }: Props) {
 
   const play = async (from = offsetRef.current) => {
     const ctx = ctxRef.current;
-    if (!ctx) return;
+    if (!ctx || loading || ctx.state === "closed") return;
     if (ctx.state === "suspended") await ctx.resume();
     stopSources();
 
@@ -283,22 +300,27 @@ export function StemMixer({ jobId, stems, filename, format }: Props) {
       toast.error("Todas las pistas están en silencio");
       return;
     }
+    const gains = Object.fromEntries(stems.map((s) => [s, gainFor(s)]));
+    const suffix =
+      silencedStems.length === 0
+        ? "Mezcla"
+        : `Sin ${joinNames(silencedStems.map((s) => STEM_FILE_NAMES[s] ?? s))}`;
     setExporting(true);
     try {
-      const gains = Object.fromEntries(stems.map((s) => [s, gainFor(s)]));
-      const blob = await requestMix(jobId, gains, format);
-      const suffix =
-        silencedStems.length === 0
-          ? "Mezcla"
-          : `Sin ${joinNames(silencedStems.map((s) => STEM_LABELS[s] ?? s))}`;
-      downloadBlob(blob, `${cleanSongName(filename)} (${suffix}).${format}`);
-      toast.success(`Mezcla exportada en ${format.toUpperCase()}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo exportar la mezcla");
+      await saveAudio({
+        name: `${cleanSongName(filename)} (${suffix}).${format}`,
+        getBlob: () => requestMix(jobId, gains, format),
+      });
     } finally {
       setExporting(false);
     }
   };
+
+  const saveStem = (stem: string) =>
+    saveAudio({
+      name: `${cleanSongName(filename)} (${STEM_FILE_NAMES[stem] ?? stem}).${format}`,
+      getBlob: () => fetchStem(jobId, stem, format),
+    });
 
   if (loadError) return <p className="text-sm text-red-400">{loadError}</p>;
 
@@ -413,15 +435,14 @@ export function StemMixer({ jobId, stems, filename, format }: Props) {
                 </button>
               </div>
 
-              <a
-                href={stemUrl(jobId, stem, format)}
-                download
+              <button
+                onClick={() => saveStem(stem)}
                 className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-white"
-                aria-label={`Descargar ${STEM_LABELS[stem] ?? stem}`}
-                title="Descargar pista"
+                aria-label={`Guardar ${STEM_LABELS[stem] ?? stem}`}
+                title={`Guardar pista en ${format.toUpperCase()}`}
               >
                 <Download className="size-4" />
-              </a>
+              </button>
             </div>
           );
         })}

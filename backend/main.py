@@ -145,7 +145,13 @@ app = FastAPI(title="Stem Splitter API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",  # desarrollo (npm run dev)
+        "http://127.0.0.1:3000",
+        "http://tauri.localhost",  # app de escritorio en Windows
+        "https://tauri.localhost",
+        "tauri://localhost",  # app de escritorio en macOS/Linux
+    ],
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
