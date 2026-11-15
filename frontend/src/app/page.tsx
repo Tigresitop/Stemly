@@ -292,8 +292,31 @@ export default function Home() {
         </section>
       )}
 
-      <footer className={`${mono.className} mt-auto pt-8 text-center text-[11px] uppercase tracking-wider text-zinc-600`}>
-        stemly · open source · separación con demucs
+      <footer
+        className={`${mono.className} mt-auto flex flex-wrap items-center justify-center gap-x-2 gap-y-1 pt-8 text-[11px] uppercase tracking-wider text-zinc-600`}
+      >
+        <span>
+          Hecho por{" "}
+          <a
+            href="https://github.com/Tigresitop"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-zinc-400 transition-colors hover:text-[#E8FF59]"
+          >
+            John Tigre
+          </a>
+        </span>
+        <span aria-hidden>·</span>
+        <a
+          href="https://github.com/Tigresitop/Stemly"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="transition-colors hover:text-zinc-300"
+        >
+          Código abierto en GitHub
+        </a>
+        <span aria-hidden>·</span>
+        <span>Separación con Demucs</span>
       </footer>
     </main>
   );
