@@ -288,7 +288,7 @@ export default function Home() {
               <RotateCcw className="size-4" /> Nueva canción
             </button>
           </div>
-          <StemMixer jobId={job.job_id} stems={mixerStems} />
+          <StemMixer jobId={job.job_id} stems={mixerStems} filename={job.filename} />
         </section>
       )}
 

@@ -1,14 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Download, Pause, Play, Square } from "lucide-react";
+import { Download, FileAudio, Loader2, Pause, Play, Square } from "lucide-react";
+import { toast } from "sonner";
 
 import { Slider } from "@/components/ui/slider";
 import { ACCENT, STEM_COLORS, STEM_LABELS, stemUrl } from "@/lib/api";
 import { mono } from "@/lib/fonts";
+import { cleanSongName, downloadBlob, encodeWav } from "@/lib/wav";
 
 type TrackState = { volume: number; muted: boolean; solo: boolean };
-type Props = { jobId: string; stems: string[] };
+type Props = { jobId: string; stems: string[]; filename: string | null };
+
+function joinNames(names: string[]) {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
+}
 
 const WAVE_BARS = 500;
 
@@ -18,7 +25,7 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function StemMixer({ jobId, stems }: Props) {
+export function StemMixer({ jobId, stems, filename }: Props) {
   const ctxRef = useRef<AudioContext | null>(null);
   const buffersRef = useRef<Record<string, AudioBuffer>>({});
   const gainsRef = useRef<Record<string, GainNode>>({});
@@ -38,6 +45,7 @@ export function StemMixer({ jobId, stems }: Props) {
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const [tracks, setTracks] = useState<Record<string, TrackState>>(() =>
     Object.fromEntries(stems.map((s) => [s, { volume: 1, muted: false, solo: false }])),
   );
@@ -253,6 +261,51 @@ export function StemMixer({ jobId, stems }: Props) {
   const updateTrack = (stem: string, patch: Partial<TrackState>) =>
     setTracks((prev) => ({ ...prev, [stem]: { ...prev[stem], ...patch } }));
 
+  // Volumen real de cada pista teniendo en cuenta mute y solo
+  const anySoloActive = Object.values(tracks).some((t) => t.solo);
+  const gainFor = (stem: string) => {
+    const t = tracks[stem];
+    return (anySoloActive ? t.solo : !t.muted) ? t.volume : 0;
+  };
+  const audibleStems = stems.filter((s) => gainFor(s) > 0);
+  const silencedStems = stems.filter((s) => gainFor(s) === 0);
+
+  // ---------- Exportar mezcla ----------
+  const exportMix = async () => {
+    if (audibleStems.length === 0) {
+      toast.error("Todas las pistas están en silencio");
+      return;
+    }
+    setExporting(true);
+    try {
+      const buffers = buffersRef.current;
+      const list = Object.values(buffers);
+      const length = Math.max(...list.map((b) => b.length));
+      const offline = new OfflineAudioContext(2, length, list[0].sampleRate);
+
+      for (const stem of audibleStems) {
+        const src = offline.createBufferSource();
+        src.buffer = buffers[stem];
+        const gain = offline.createGain();
+        gain.gain.value = gainFor(stem);
+        src.connect(gain).connect(offline.destination);
+        src.start(0);
+      }
+
+      const rendered = await offline.startRendering();
+      const suffix =
+        silencedStems.length === 0
+          ? "Mezcla"
+          : `Sin ${joinNames(silencedStems.map((s) => STEM_LABELS[s] ?? s))}`;
+      downloadBlob(encodeWav(rendered), `${cleanSongName(filename)} (${suffix}).wav`);
+      toast.success("Mezcla exportada");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo exportar la mezcla");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loadError) return <p className="text-sm text-red-400">{loadError}</p>;
 
   if (loading) {
@@ -378,6 +431,41 @@ export function StemMixer({ jobId, stems }: Props) {
             </div>
           );
         })}
+      </div>
+
+      {/* Exportar mezcla */}
+      <div className="flex flex-wrap items-center gap-4 border-t border-white/10 p-4">
+        <div className="min-w-0 flex-1">
+          <p className={`${mono.className} text-[11px] uppercase tracking-wider text-zinc-500`}>
+            Tu mezcla incluye
+          </p>
+          <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            {audibleStems.length === 0 ? (
+              <span className="text-zinc-500">Nada (todas las pistas en silencio)</span>
+            ) : (
+              audibleStems.map((s) => (
+                <span key={s} className="flex items-center gap-1.5 text-zinc-300">
+                  <span className="size-2 rounded-full" style={{ backgroundColor: STEM_COLORS[s] }} />
+                  {STEM_LABELS[s] ?? s}
+                  {gainFor(s) < 1 && (
+                    <span className={`${mono.className} text-xs text-zinc-500`}>
+                      {Math.round(gainFor(s) * 100)}%
+                    </span>
+                  )}
+                </span>
+              ))
+            )}
+          </p>
+        </div>
+        <button
+          onClick={exportMix}
+          disabled={exporting || audibleStems.length === 0}
+          className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[#E8FF59]/10 disabled:cursor-not-allowed disabled:opacity-40"
+          style={{ borderColor: ACCENT, color: ACCENT }}
+        >
+          {exporting ? <Loader2 className="size-4 animate-spin" /> : <FileAudio className="size-4" />}
+          {exporting ? "Exportando…" : "Exportar mezcla"}
+        </button>
       </div>
     </section>
   );
