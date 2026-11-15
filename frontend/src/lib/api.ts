@@ -80,6 +80,10 @@ export async function getStatus(jobId: string): Promise<JobStatus> {
   );
 }
 
+export async function deleteJob(jobId: string): Promise<void> {
+  await fetch(`${API_URL}/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
+}
+
 export function stemUrl(jobId: string, stem: string): string {
   return `${API_URL}/stems/${encodeURIComponent(jobId)}/${encodeURIComponent(stem)}`;
 }

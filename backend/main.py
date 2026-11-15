@@ -15,8 +15,10 @@ Seguridad:
 import re
 import shutil
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -61,10 +63,71 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 HOST = "127.0.0.1"  # NO cambiar a 0.0.0.0: eso expondria el servidor a tu red
 PORT = 8000
 
+# Limpieza automatica: un trabajo terminado se borra si nadie lo usa durante este tiempo.
+# La interfaz avisa cada 5 minutos que sigue abierta, asi que solo se borran los abandonados.
+JOB_TTL_SECONDS = 30 * 60  # 30 minutos sin uso
+CLEANUP_INTERVAL_SECONDS = 5 * 60  # revisar cada 5 minutos
+
+
+# ---------------------------------------------------------------------------
+# Limpieza de disco
+# ---------------------------------------------------------------------------
+def wipe_data_dirs() -> None:
+    """Al arrancar, borra todo lo que quedo de sesiones anteriores.
+
+    Los trabajos viven en memoria, asi que tras reiniciar el servidor las carpetas
+    viejas ya no pertenecen a ningun trabajo y solo ocupan espacio.
+    """
+    removed = 0
+    for directory in (UPLOAD_DIR, OUTPUT_DIR):
+        for item in directory.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
+            removed += 1
+    if removed:
+        print(f"Limpieza inicial: {removed} elemento(s) de sesiones anteriores borrados")
+
+
+def cleanup_expired_jobs() -> None:
+    """Borra los trabajos terminados que llevan mas de JOB_TTL_SECONDS sin uso."""
+    now = time.time()
+    with jobs_lock:
+        expired = [
+            job_id
+            for job_id, job in jobs.items()
+            if job["status"] in ("done", "error") and now - job["last_access"] > JOB_TTL_SECONDS
+        ]
+        for job_id in expired:
+            jobs.pop(job_id, None)
+    for job_id in expired:
+        shutil.rmtree(OUTPUT_DIR / job_id, ignore_errors=True)
+    if expired:
+        print(f"Limpieza automatica: {len(expired)} trabajo(s) sin uso borrados")
+
+
+def cleanup_loop(stop: threading.Event) -> None:
+    while not stop.wait(CLEANUP_INTERVAL_SECONDS):
+        try:
+            cleanup_expired_jobs()
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error en la limpieza automatica: {exc}")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    wipe_data_dirs()
+    stop = threading.Event()
+    threading.Thread(target=cleanup_loop, args=(stop,), daemon=True).start()
+    yield
+    stop.set()
+
+
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Stem Splitter API", version="0.1.0")
+app = FastAPI(title="Stem Splitter API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -99,7 +162,10 @@ def get_job_or_404(job_id: str) -> dict:
         job = jobs.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="Trabajo no encontrado")
-        return dict(job)
+        job["last_access"] = time.time()  # cualquier consulta cuenta como "en uso"
+        result = dict(job)
+    result.pop("last_access", None)  # dato interno, no se envia a la interfaz
+    return result
 
 
 def safe_song_name(filename: str | None) -> str:
@@ -208,6 +274,7 @@ async def separate(
             "progress": 0,
             "stems": [],
             "error": None,
+            "last_access": time.time(),
         }
 
     executor.submit(process_job, job_id, input_path, model)

@@ -12,6 +12,7 @@ import {
   MAX_FILE_SIZE,
   STEM_COLORS,
   checkHealth,
+  deleteJob,
   getStatus,
   stemUrl,
   uploadSong,
@@ -70,6 +71,17 @@ export default function Home() {
     return () => clearInterval(id);
   }, [job]);
 
+  // Mientras el resultado esta abierto, avisar al backend cada 5 minutos
+  // para que la limpieza automatica no borre las pistas en uso.
+  const doneJobId = job?.status === "done" ? job.job_id : null;
+  useEffect(() => {
+    if (!doneJobId) return;
+    const id = setInterval(() => {
+      getStatus(doneJobId).catch(() => {});
+    }, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [doneJobId]);
+
   const pickFile = (f: File | undefined) => {
     if (!f) return;
     const ext = f.name.slice(f.name.lastIndexOf(".")).toLowerCase();
@@ -99,6 +111,10 @@ export default function Home() {
   };
 
   const reset = () => {
+    // Borrar del disco las pistas de la cancion anterior (si ya termino)
+    if (job && (job.status === "done" || job.status === "error")) {
+      deleteJob(job.job_id).catch(() => {});
+    }
     setFile(null);
     setJob(null);
   };
