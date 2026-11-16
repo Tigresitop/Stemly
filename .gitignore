@@ -1,5 +1,6 @@
 # Python
 .venv/
+.venv-*/
 __pycache__/
 *.pyc
 
@@ -19,3 +20,10 @@ separated/
 Thumbs.db
 .vscode/
 .idea/
+
+# Compilaciones del backend (PyInstaller)
+backend/build*/
+backend/dist*/
+
+# Motores empaquetados para publicar (se suben a GitHub Releases, no al repo)
+release/

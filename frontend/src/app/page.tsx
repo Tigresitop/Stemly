@@ -5,6 +5,8 @@ import { Download, RotateCcw, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Logo } from "@/components/logo";
+import { EngineGate, useEngine } from "@/components/engine-gate";
+import { ExternalLink } from "@/components/external-link";
 import { StemMixer } from "@/components/stem-mixer";
 import {
   ACCENT,
@@ -45,6 +47,16 @@ function formatSize(bytes: number) {
 }
 
 export default function Home() {
+  // En la app de escritorio, EngineGate se asegura de que el motor esté instalado y encendido
+  return (
+    <EngineGate>
+      <StemlyApp />
+    </EngineGate>
+  );
+}
+
+function StemlyApp() {
+  const engine = useEngine();
   const [health, setHealth] = useState<Health | null>(null);
   const [backendDown, setBackendDown] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -158,16 +170,28 @@ export default function Home() {
       {/* Encabezado */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <Logo />
-        {health && (
-          <div
-            className={`${mono.className} flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-[11px] uppercase tracking-wider text-zinc-400`}
-          >
-            <span
-              className={`size-1.5 rounded-full ${health.device === "cuda" ? "bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400" : "bg-amber-400"}`}
-            />
-            {health.device === "cuda" ? `GPU · ${gpuName}` : "CPU"}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {health && (
+            <div
+              className={`${mono.className} flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-[11px] uppercase tracking-wider text-zinc-400`}
+            >
+              <span
+                className={`size-1.5 rounded-full ${health.device === "cuda" ? "bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400" : "bg-amber-400"}`}
+              />
+              {health.device === "cuda" ? `GPU · ${gpuName}` : "CPU"}
+            </div>
+          )}
+          {engine.desktop && (
+            <button
+              onClick={engine.openSetup}
+              disabled={busy}
+              title={busy ? "Esperá a que termine la separación" : "Cambiar entre motor GPU y CPU"}
+              className={`${mono.className} rounded-full border border-white/10 px-3 py-1.5 text-[11px] uppercase tracking-wider text-zinc-500 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              Cambiar motor
+            </button>
+          )}
+        </div>
       </header>
 
       {backendDown && (
@@ -387,24 +411,20 @@ export default function Home() {
       >
         <span>
           Hecho por{" "}
-          <a
+          <ExternalLink
             href="https://github.com/Tigresitop"
-            target="_blank"
-            rel="noopener noreferrer"
             className="text-zinc-400 transition-colors hover:text-[#E8FF59]"
           >
             John Tigre
-          </a>
+          </ExternalLink>
         </span>
         <span aria-hidden>·</span>
-        <a
+        <ExternalLink
           href="https://github.com/Tigresitop/Stemly"
-          target="_blank"
-          rel="noopener noreferrer"
           className="transition-colors hover:text-zinc-300"
         >
           Código abierto en GitHub
-        </a>
+        </ExternalLink>
         <span aria-hidden>·</span>
         <span>Separación con Demucs</span>
       </footer>
