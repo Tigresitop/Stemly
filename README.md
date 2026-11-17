@@ -25,6 +25,22 @@ Stemly usa inteligencia artificial ([Demucs](https://github.com/facebookresearch
 - 🧹 **No llena tu disco**: las pistas que ya no usás se borran solas
 - 🔒 **100% local**: sin cuentas, sin subir nada a internet
 
+## Descargar
+
+**[⬇️ Descargar Stemly para Windows](https://github.com/Tigresitop/Stemly/releases/latest)** (instalador de ~3 MB)
+
+1. Descargá `Stemly_x.x.x_x64-setup.exe` desde la página de **Releases**.
+2. Instalalo. Como la app todavía no tiene firma digital, Windows puede mostrar *"Windows protegió su PC"*: hacé clic en **Más información → Ejecutar de todas formas**.
+3. La primera vez, Stemly detecta tu tarjeta gráfica y te ofrece descargar el motor de separación:
+   - **GPU** (NVIDIA): descarga de 2,6 GB, separa una canción en segundos.
+   - **CPU**: descarga de 591 MB, funciona en cualquier PC, tarda algunos minutos por canción.
+
+Podés tener los dos motores instalados y cambiar entre ellos cuando quieras.
+
+> 🔒 **Descargá Stemly solo desde la sección [Releases](https://github.com/Tigresitop/Stemly/releases) de este repositorio.** Es la única fuente oficial.
+
+**Requisitos:** Windows 10 u 11 (64 bits) y entre 2 y 7 GB libres según el motor. macOS y Linux están en la hoja de ruta.
+
 ## Casos de uso
 
 - Practicar tu instrumento sobre la canción original, sin tu parte
@@ -32,7 +48,11 @@ Stemly usa inteligencia artificial ([Demucs](https://github.com/facebookresearch
 - Sacar acapellas para remixes
 - Estudiar cómo está arreglada una canción escuchando cada instrumento por separado
 
-## Requisitos
+## Para desarrolladores
+
+Para compilar Stemly o modificarlo. Si solo querés usarlo, bajá el instalador de arriba.
+
+### Requisitos
 
 | | Mínimo | Recomendado |
 |---|---|---|
@@ -42,23 +62,23 @@ Stemly usa inteligencia artificial ([Demucs](https://github.com/facebookresearch
 | FFmpeg | Sí | Sí |
 | GPU | No (usa CPU) | NVIDIA con 4 GB de VRAM o más |
 
-## Instalación
+### Instalación
 
-### 1. Clonar el repositorio
+#### 1. Clonar el repositorio
 
 ```powershell
 git clone https://github.com/Tigresitop/Stemly.git
 cd Stemly
 ```
 
-### 2. Instalar FFmpeg y Python 3.11
+#### 2. Instalar FFmpeg y Python 3.11
 
 ```powershell
 winget install Gyan.FFmpeg
 py install 3.11
 ```
 
-### 3. Backend (motor de separación)
+#### 3. Backend (motor de separación)
 
 ```powershell
 cd backend
@@ -82,14 +102,14 @@ Y el resto de dependencias:
 pip install -r requirements.txt
 ```
 
-### 4. Frontend (interfaz)
+#### 4. Frontend (interfaz)
 
 ```powershell
 cd ..\frontend
 npm install
 ```
 
-## Uso
+### Uso en modo desarrollo
 
 Abrí **dos terminales**:
 
@@ -147,6 +167,7 @@ Documentación interactiva en **http://127.0.0.1:8000/docs** con el backend ence
 
 **Backend:** Python · FastAPI · Demucs · PyTorch · FFmpeg
 **Frontend:** Next.js · TypeScript · Tailwind CSS · shadcn/ui · Web Audio API
+**Escritorio:** Tauri (Rust) · PyInstaller
 
 ## Hoja de ruta
 
@@ -156,7 +177,11 @@ Documentación interactiva en **http://127.0.0.1:8000/docs** con el backend ence
 - [x] Exportar la mezcla personalizada en un solo archivo
 - [x] Descargas en WAV, FLAC y MP3
 - [x] Limpieza automática de pistas sin uso
-- [ ] Aplicación de escritorio instalable (Tauri)
+- [x] Aplicación de escritorio instalable (Tauri)
+- [x] Detección de GPU y motores CPU/GPU descargables
+- [ ] Versión para macOS (Apple Silicon)
+- [ ] Versión para Linux
+- [ ] Actualizaciones automáticas
 
 ## Aviso
 

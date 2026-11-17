@@ -1,8 +1,8 @@
 [package]
 name = "app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Separa voz, batería, bajo y más de cualquier canción"
+authors = ["John Tigre"]
 license = ""
 repository = ""
 edition = "2024"
