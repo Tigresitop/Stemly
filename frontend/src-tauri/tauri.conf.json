@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Stemly",
   "mainBinaryName": "Stemly",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.tigresitop.stemly",
   "build": {
     "frontendDist": "../out",
@@ -19,7 +19,8 @@
         "minWidth": 720,
         "minHeight": 600,
         "center": true,
-        "resizable": true
+        "resizable": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
